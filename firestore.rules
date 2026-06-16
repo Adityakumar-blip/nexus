@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// Nexus security rules.
+// Every document carries an `ownerId`. A signed-in user may only read or write
+// documents they own, and may only create documents stamped with their own uid.
+// Paste these into Firebase Console → Firestore Database → Rules, then Publish.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function ownsExisting() {
+      return isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    function ownsIncoming() {
+      return isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    match /projects/{projectId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming();
+      allow update: if ownsExisting() && ownsIncoming();
+    }
+
+    match /tasks/{taskId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming();
+      allow update: if ownsExisting() && ownsIncoming();
+    }
+
+    match /notes/{noteId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming();
+      allow update: if ownsExisting() && ownsIncoming();
+    }
+
+    match /milestones/{milestoneId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming();
+      allow update: if ownsExisting() && ownsIncoming();
+    }
+
+    // MCP Personal Access Tokens. Managed exclusively by the server (Admin SDK)
+    // via /api/keys — never read or written directly by clients, so token hashes
+    // are never exposed to the browser.
+    match /apiKeys/{keyId} {
+      allow read, write: if false;
+    }
+
+    // Deny everything else by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
