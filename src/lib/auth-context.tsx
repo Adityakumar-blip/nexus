@@ -21,6 +21,7 @@ import {
   type User,
 } from "firebase/auth";
 import { auth, isFirebaseConfigured } from "./firebase";
+import { upsertUserProfile } from "./store";
 
 interface AuthContextValue {
   user: User | null;
@@ -45,6 +46,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setReady(true);
+      // Mirror the auth user into a queryable `users/{uid}` profile so teammates
+      // can resolve them for assignment, comments, and member lists.
+      if (u) void upsertUserProfile(u);
     });
     return unsub;
   }, []);

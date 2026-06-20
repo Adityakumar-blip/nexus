@@ -4,14 +4,29 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
-import { createProject, updateProject } from "@/lib/store";
-import { PROJECT_COLORS, type Project } from "@/lib/types";
+import {
+  createProject,
+  updateProject,
+  watchOrganizations,
+} from "@/lib/store";
+import {
+  PROJECT_COLORS,
+  type Project,
+  type Organization,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { colorClasses } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +35,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
+const NO_ORG = "none";
 
 export function ProjectDialog({
   open,
@@ -35,13 +52,21 @@ export function ProjectDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [color, setColor] = useState<string>("blue");
+  const [orgId, setOrgId] = useState<string>(NO_ORG);
+  const [orgs, setOrgs] = useState<Organization[]>([]);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    return watchOrganizations(user.uid, setOrgs);
+  }, [user]);
 
   useEffect(() => {
     if (open) {
       setName(project?.name ?? "");
       setDescription(project?.description ?? "");
       setColor(project?.color ?? "blue");
+      setOrgId(project?.orgId ?? NO_ORG);
     }
   }, [open, project]);
 
@@ -50,11 +75,13 @@ export function ProjectDialog({
     if (!user || !name.trim()) return;
     setBusy(true);
     try {
+      const orgValue = orgId === NO_ORG ? null : orgId;
       if (project) {
         await updateProject(project.id, {
           name: name.trim(),
           description: description.trim(),
           color,
+          orgId: orgValue,
         });
         toast.success("Project updated");
       } else {
@@ -62,6 +89,7 @@ export function ProjectDialog({
           name: name.trim(),
           description: description.trim(),
           color,
+          orgId: orgValue,
         });
         toast.success("Project created");
       }
@@ -127,6 +155,27 @@ export function ProjectDialog({
               })}
             </div>
           </div>
+          {orgs.length > 0 && (
+            <div className="space-y-2">
+              <Label>Organization</Label>
+              <Select value={orgId} onValueChange={setOrgId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_ORG}>Personal (no sharing)</SelectItem>
+                  {orgs.map((o) => (
+                    <SelectItem key={o.id} value={o.id}>
+                      {o.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-xs">
+                Link to an organization to add its members to this project.
+              </p>
+            </div>
+          )}
           <DialogFooter>
             <Button
               type="button"

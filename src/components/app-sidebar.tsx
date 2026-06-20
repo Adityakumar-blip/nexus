@@ -7,7 +7,9 @@ import {
   FolderKanban,
   Map,
   BookOpen,
+  FileText,
   Boxes,
+  Users,
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,6 +20,8 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/roadmap", label: "Roadmap", icon: Map },
+  { href: "/organizations", label: "Organizations", icon: Users },
+  { href: "/docs", label: "Docs", icon: FileText },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

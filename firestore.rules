@@ -1,8 +1,14 @@
 rules_version = '2';
 
 // Nexus security rules.
-// Every document carries an `ownerId`. A signed-in user may only read or write
-// documents they own, and may only create documents stamped with their own uid.
+//
+// Single-owner data still works exactly as before: every document carries an
+// `ownerId`, and its owner can always read/write it. Collaboration is ADDITIVE
+// on top of that — a project lists `memberIds` (+ a per-member `roles` map), and
+// members gain access to that project's tasks, milestones and comments according
+// to their role (admin/member/viewer). Org membership and email invites are
+// handled server-side via the Admin SDK (/api/orgs), which bypasses these rules.
+//
 // Paste these into Firebase Console → Firestore Database → Rules, then Publish.
 
 service cloud.firestore {
@@ -12,41 +18,135 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function uid() {
+      return request.auth.uid;
+    }
+
     function ownsExisting() {
-      return isSignedIn() && resource.data.ownerId == request.auth.uid;
+      return isSignedIn() && resource.data.ownerId == uid();
     }
 
     function ownsIncoming() {
-      return isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      return isSignedIn() && request.resource.data.ownerId == uid();
     }
 
+    // --- project-membership helpers (resolve the parent project of a task/etc.)
+
+    function projectData(pid) {
+      return get(/databases/$(database)/documents/projects/$(pid)).data;
+    }
+
+    // Role of the current user within a project, or 'none'. The project owner is
+    // always treated as an admin, even on legacy projects with no roles map.
+    function roleIn(p) {
+      return p.ownerId == uid()
+        ? 'admin'
+        : ('roles' in p && uid() in p.roles ? p.roles[uid()] : 'none');
+    }
+
+    function isProjectMember(pid) {
+      return isSignedIn() && roleIn(projectData(pid)) != 'none';
+    }
+
+    function isProjectAdmin(pid) {
+      return isSignedIn() && roleIn(projectData(pid)) == 'admin';
+    }
+
+    // Admins and members may edit tasks; viewers may not.
+    function canEditProjectTasks(pid) {
+      return isSignedIn() && roleIn(projectData(pid)) in ['admin', 'member'];
+    }
+
+    // --- user profiles ------------------------------------------------------
+    // Readable by any signed-in user so we can render teammates, assignees and
+    // commenters by name. Each user may only write their own profile.
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && userId == uid()
+        && request.resource.data.uid == uid();
+      allow delete: if false;
+    }
+
+    // --- organizations (people pool) ----------------------------------------
+    // Members read their org; only the owner mutates it from the client.
+    // Joining by code and inviting by email go through the Admin SDK.
+    match /organizations/{orgId} {
+      allow read: if isSignedIn()
+        && (resource.data.ownerId == uid() || uid() in resource.data.memberIds);
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == uid()
+        && uid() in request.resource.data.memberIds;
+      allow update, delete: if isSignedIn() && resource.data.ownerId == uid();
+    }
+
+    // --- projects -----------------------------------------------------------
     match /projects/{projectId} {
-      allow read, delete: if ownsExisting();
+      allow read: if ownsExisting()
+        || (isSignedIn()
+            && 'memberIds' in resource.data
+            && uid() in resource.data.memberIds);
       allow create: if ownsIncoming();
-      allow update: if ownsExisting() && ownsIncoming();
+      // Owner or a project admin may update (e.g. manage members / roles).
+      allow update: if ownsExisting()
+        || (isSignedIn()
+            && 'roles' in resource.data
+            && uid() in resource.data.roles
+            && resource.data.roles[uid()] == 'admin');
+      allow delete: if ownsExisting();
     }
 
+    // --- tasks --------------------------------------------------------------
     match /tasks/{taskId} {
-      allow read, delete: if ownsExisting();
-      allow create: if ownsIncoming();
-      allow update: if ownsExisting() && ownsIncoming();
+      allow read: if ownsExisting()
+        || isProjectMember(resource.data.projectId);
+      allow create: if ownsIncoming()
+        && canEditProjectTasks(request.resource.data.projectId);
+      allow update: if ownsExisting()
+        || canEditProjectTasks(resource.data.projectId);
+      allow delete: if ownsExisting()
+        || isProjectAdmin(resource.data.projectId);
     }
 
+    // --- milestones ---------------------------------------------------------
+    match /milestones/{milestoneId} {
+      allow read: if ownsExisting()
+        || isProjectMember(resource.data.projectId);
+      allow create: if ownsIncoming()
+        && canEditProjectTasks(request.resource.data.projectId);
+      allow update: if ownsExisting()
+        || canEditProjectTasks(resource.data.projectId);
+      allow delete: if ownsExisting()
+        || isProjectAdmin(resource.data.projectId);
+    }
+
+    // --- comments -----------------------------------------------------------
+    // Any project member (including viewers) may post; authors edit/delete own.
+    match /comments/{commentId} {
+      allow read: if isSignedIn()
+        && (resource.data.authorId == uid()
+            || isProjectMember(resource.data.projectId));
+      allow create: if isSignedIn()
+        && request.resource.data.authorId == uid()
+        && isProjectMember(request.resource.data.projectId);
+      allow update, delete: if isSignedIn() && resource.data.authorId == uid();
+    }
+
+    // --- notes & documents (still single-owner) -----------------------------
     match /notes/{noteId} {
       allow read, delete: if ownsExisting();
       allow create: if ownsIncoming();
       allow update: if ownsExisting() && ownsIncoming();
     }
 
-    match /milestones/{milestoneId} {
+    match /documents/{docId} {
       allow read, delete: if ownsExisting();
       allow create: if ownsIncoming();
       allow update: if ownsExisting() && ownsIncoming();
     }
 
     // MCP Personal Access Tokens. Managed exclusively by the server (Admin SDK)
-    // via /api/keys — never read or written directly by clients, so token hashes
-    // are never exposed to the browser.
+    // via /api/keys — never read or written directly by clients.
     match /apiKeys/{keyId} {
       allow read, write: if false;
     }

@@ -15,6 +15,7 @@ import type {
   Project,
   Task,
   Note,
+  Doc,
   Milestone,
   ProjectStatus,
   MilestoneStatus,
@@ -27,6 +28,7 @@ const COL = {
   projects: "projects",
   tasks: "tasks",
   notes: "notes",
+  docs: "documents",
   milestones: "milestones",
 } as const;
 
@@ -74,6 +76,9 @@ function mapProject(id: string, data: FirebaseFirestore.DocumentData): Project {
     color: data.color ?? "blue",
     status: (data.status ?? "active") as ProjectStatus,
     ownerId: data.ownerId,
+    orgId: data.orgId ?? null,
+    memberIds: data.memberIds ?? [data.ownerId],
+    roles: data.roles ?? { [data.ownerId]: "admin" },
     createdAt: ts(data.createdAt),
     updatedAt: ts(data.updatedAt),
   };
@@ -106,6 +111,9 @@ export async function createProject(
     color: input.color ?? "blue",
     status: input.status ?? "active",
     ownerId,
+    orgId: null,
+    memberIds: [ownerId],
+    roles: { [ownerId]: "admin" },
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
@@ -246,6 +254,7 @@ function mapTask(id: string, data: FirebaseFirestore.DocumentData): Task {
     id,
     projectId: data.projectId,
     milestoneId: data.milestoneId ?? null,
+    parentId: data.parentId ?? null,
     title: data.title ?? "",
     description: data.description ?? "",
     status: (data.status ?? "todo") as TaskStatus,
@@ -253,6 +262,7 @@ function mapTask(id: string, data: FirebaseFirestore.DocumentData): Task {
     priority: (data.priority ?? "medium") as Priority,
     order: data.order ?? 0,
     dueDate: nullableTs(data.dueDate),
+    assigneeId: data.assigneeId ?? null,
     ownerId: data.ownerId,
     createdAt: ts(data.createdAt),
     updatedAt: ts(data.updatedAt),
@@ -286,14 +296,17 @@ export async function createTask(
     priority?: Priority;
     status?: TaskStatus;
     milestoneId?: string | null;
+    parentId?: string | null;
     dueDate?: number | null;
   },
 ): Promise<Task> {
   await getOwned(COL.projects, input.projectId, ownerId);
   if (input.milestoneId) await getOwned(COL.milestones, input.milestoneId, ownerId);
+  if (input.parentId) await getOwned(COL.tasks, input.parentId, ownerId);
   const ref = await adminDb().collection(COL.tasks).add({
     projectId: input.projectId,
     milestoneId: input.milestoneId ?? null,
+    parentId: input.parentId ?? null,
     title: input.title,
     description: input.description ?? "",
     status: input.status ?? "todo",
@@ -301,6 +314,7 @@ export async function createTask(
     priority: input.priority ?? "medium",
     order: Date.now(),
     dueDate: input.dueDate ?? null,
+    assigneeId: null,
     ownerId,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
@@ -312,11 +326,12 @@ export async function updateTask(
   ownerId: string,
   id: string,
   patch: Partial<
-    Pick<Task, "title" | "description" | "status" | "type" | "priority" | "order" | "dueDate" | "milestoneId">
+    Pick<Task, "title" | "description" | "status" | "type" | "priority" | "order" | "dueDate" | "milestoneId" | "parentId">
   >,
 ): Promise<Task> {
   await getOwned(COL.tasks, id, ownerId);
   if (patch.milestoneId) await getOwned(COL.milestones, patch.milestoneId, ownerId);
+  if (patch.parentId) await getOwned(COL.tasks, patch.parentId, ownerId);
   await adminDb()
     .collection(COL.tasks)
     .doc(id)
@@ -326,7 +341,17 @@ export async function updateTask(
 
 export async function deleteTask(ownerId: string, id: string): Promise<void> {
   await getOwned(COL.tasks, id, ownerId);
-  await adminDb().collection(COL.tasks).doc(id).delete();
+  const db = adminDb();
+  // Cascade-delete any sub-tasks so children are never orphaned.
+  const subs = await db
+    .collection(COL.tasks)
+    .where("ownerId", "==", ownerId)
+    .where("parentId", "==", id)
+    .get();
+  const batch = db.batch();
+  subs.docs.forEach((d) => batch.delete(d.ref));
+  batch.delete(db.collection(COL.tasks).doc(id));
+  await batch.commit();
 }
 
 // --- notes (knowledge base) ------------------------------------------------
@@ -415,6 +440,130 @@ export async function updateNote(
 export async function deleteNote(ownerId: string, id: string): Promise<void> {
   await getOwned(COL.notes, id, ownerId);
   await adminDb().collection(COL.notes).doc(id).delete();
+}
+
+// --- documents (Notion-style nested docs) ----------------------------------
+
+function mapDoc(id: string, data: FirebaseFirestore.DocumentData): Doc {
+  return {
+    id,
+    title: data.title ?? "",
+    icon: data.icon ?? null,
+    content: data.content ?? "",
+    contentText: data.contentText ?? "",
+    parentId: data.parentId ?? null,
+    projectId: data.projectId ?? null,
+    order: data.order ?? 0,
+    ownerId: data.ownerId,
+    createdAt: ts(data.createdAt),
+    updatedAt: ts(data.updatedAt),
+  };
+}
+
+export async function listDocs(
+  ownerId: string,
+  filter: { query?: string; projectId?: string; parentId?: string | null } = {},
+): Promise<Doc[]> {
+  const snap = await adminDb()
+    .collection(COL.docs)
+    .where("ownerId", "==", ownerId)
+    .get();
+  let docs = snap.docs.map((d) => mapDoc(d.id, d.data()));
+  if (filter.projectId) docs = docs.filter((d) => d.projectId === filter.projectId);
+  if (filter.parentId !== undefined)
+    docs = docs.filter((d) => d.parentId === filter.parentId);
+  const q = filter.query?.trim().toLowerCase();
+  if (q) {
+    docs = docs.filter(
+      (d) =>
+        d.title.toLowerCase().includes(q) ||
+        d.contentText.toLowerCase().includes(q),
+    );
+  }
+  docs.sort((a, b) => a.order - b.order || b.createdAt - a.createdAt);
+  return docs;
+}
+
+export async function getDoc(ownerId: string, id: string): Promise<Doc> {
+  return mapDoc(id, await getOwned(COL.docs, id, ownerId));
+}
+
+export async function createDoc(
+  ownerId: string,
+  input: {
+    title?: string;
+    content?: string;
+    contentText?: string;
+    icon?: string | null;
+    parentId?: string | null;
+    projectId?: string | null;
+  },
+): Promise<Doc> {
+  if (input.parentId) await getOwned(COL.docs, input.parentId, ownerId);
+  if (input.projectId) await getOwned(COL.projects, input.projectId, ownerId);
+  const ref = await adminDb().collection(COL.docs).add({
+    title: input.title ?? "Untitled",
+    content: input.content ?? "",
+    contentText: input.contentText ?? "",
+    icon: input.icon ?? null,
+    parentId: input.parentId ?? null,
+    projectId: input.projectId ?? null,
+    order: Date.now(),
+    ownerId,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return getDoc(ownerId, ref.id);
+}
+
+export async function updateDoc(
+  ownerId: string,
+  id: string,
+  patch: Partial<
+    Pick<
+      Doc,
+      "title" | "content" | "contentText" | "icon" | "parentId" | "projectId" | "order"
+    >
+  >,
+): Promise<Doc> {
+  await getOwned(COL.docs, id, ownerId);
+  if (patch.parentId) await getOwned(COL.docs, patch.parentId, ownerId);
+  if (patch.projectId) await getOwned(COL.projects, patch.projectId, ownerId);
+  await adminDb()
+    .collection(COL.docs)
+    .doc(id)
+    .update({ ...prune(patch), updatedAt: FieldValue.serverTimestamp() });
+  return getDoc(ownerId, id);
+}
+
+// Delete a doc and its whole subtree so children are never orphaned.
+export async function deleteDoc(ownerId: string, id: string): Promise<void> {
+  await getOwned(COL.docs, id, ownerId);
+  const db = adminDb();
+  const all = await db.collection(COL.docs).where("ownerId", "==", ownerId).get();
+  const childrenOf = new Map<string | null, string[]>();
+  all.docs.forEach((d) => {
+    const parentId = (d.data().parentId ?? null) as string | null;
+    const list = childrenOf.get(parentId) ?? [];
+    list.push(d.id);
+    childrenOf.set(parentId, list);
+  });
+
+  const toDelete: string[] = [];
+  const stack = [id];
+  while (stack.length) {
+    const current = stack.pop()!;
+    toDelete.push(current);
+    stack.push(...(childrenOf.get(current) ?? []));
+  }
+
+  for (let i = 0; i < toDelete.length; i += 450) {
+    const batch = db.batch();
+    toDelete.slice(i, i + 450).forEach((docId) => {
+      batch.delete(db.collection(COL.docs).doc(docId));
+    });
+    await batch.commit();
+  }
 }
 
 // Drop undefined fields so an update never writes `undefined` to Firestore.

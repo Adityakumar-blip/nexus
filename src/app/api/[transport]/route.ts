@@ -251,7 +251,7 @@ const handler = createMcpHandler(
 
     server.tool(
       "create_task",
-      "Create a task in a project (optionally linked to a milestone).",
+      "Create a task in a project (optionally linked to a milestone, or nested under a parent task as a sub-task via parentId).",
       {
         projectId: z.string(),
         title: z.string().min(1),
@@ -260,6 +260,7 @@ const handler = createMcpHandler(
         priority: priority.optional(),
         status: taskStatus.optional(),
         milestoneId: z.string().nullable().optional(),
+        parentId: z.string().nullable().optional(),
         dueDate: dateInput.nullable().optional(),
       },
       ({ dueDate, ...rest }, extra) =>
@@ -272,7 +273,7 @@ const handler = createMcpHandler(
 
     server.tool(
       "update_task",
-      "Update a task. Pass milestoneId/dueDate as null to clear them.",
+      "Update a task. Pass milestoneId/parentId/dueDate as null to clear them (parentId null detaches a sub-task).",
       {
         id: z.string(),
         title: z.string().min(1).optional(),
@@ -281,6 +282,7 @@ const handler = createMcpHandler(
         priority: priority.optional(),
         status: taskStatus.optional(),
         milestoneId: z.string().nullable().optional(),
+        parentId: z.string().nullable().optional(),
         dueDate: dateInput.nullable().optional(),
       },
       ({ id, dueDate, ...patch }, extra) =>
