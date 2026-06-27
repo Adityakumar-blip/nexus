@@ -101,7 +101,13 @@ const presentNote = (n: Note) => ({
 
 const projectStatus = z.enum(["active", "archived"]);
 const milestoneStatus = z.enum(["planned", "active", "shipped"]);
-const taskStatus = z.enum(["todo", "in_progress", "done"]);
+const taskStatus = z.enum([
+  "todo",
+  "in_progress",
+  "review",
+  "done",
+  "later",
+]);
 const taskType = z.enum(["feature", "bug", "improvement", "chore"]);
 const priority = z.enum(["low", "medium", "high"]);
 const projectColor = z.enum([...PROJECT_COLORS]);
@@ -237,7 +243,7 @@ const handler = createMcpHandler(
     // --- tasks -------------------------------------------------------------
     server.tool(
       "list_tasks",
-      "List tasks. Filter by project, milestone, and/or status.",
+      "List tasks. Filter by project, milestone, and/or status. Statuses: todo, in_progress, review (needs human oversight), done, later (parked for after current work). Each task may carry a `note` (a flag explaining why it needs review / what's blocking / what to revisit) and a `docId` (its linked feature doc).",
       {
         projectId: z.string().optional(),
         milestoneId: z.string().optional(),
@@ -251,7 +257,7 @@ const handler = createMcpHandler(
 
     server.tool(
       "create_task",
-      "Create a task in a project (optionally linked to a milestone, or nested under a parent task as a sub-task via parentId).",
+      "Create a task in a project (optionally linked to a milestone, or nested under a parent task as a sub-task via parentId). Set status to 'review' to flag a task for human oversight, or 'later' to park it for after the current work — and use `note` to leave a short message explaining why.",
       {
         projectId: z.string(),
         title: z.string().min(1),
@@ -259,6 +265,12 @@ const handler = createMcpHandler(
         type: taskType.optional(),
         priority: priority.optional(),
         status: taskStatus.optional(),
+        note: z
+          .string()
+          .optional()
+          .describe(
+            "Short flag/handoff note shown on the task card: why it needs review, what's blocking, or what to pick up later.",
+          ),
         milestoneId: z.string().nullable().optional(),
         parentId: z.string().nullable().optional(),
         dueDate: dateInput.nullable().optional(),
@@ -273,7 +285,7 @@ const handler = createMcpHandler(
 
     server.tool(
       "update_task",
-      "Update a task. Pass milestoneId/parentId/dueDate as null to clear them (parentId null detaches a sub-task).",
+      "Update a task. Pass milestoneId/parentId/dueDate as null to clear them (parentId null detaches a sub-task). Move status to 'review' when a task needs a human to look it over, or 'later' to set it aside — pair either with `note` to say why. Pass `note` as an empty string to clear it.",
       {
         id: z.string(),
         title: z.string().min(1).optional(),
@@ -281,6 +293,12 @@ const handler = createMcpHandler(
         type: taskType.optional(),
         priority: priority.optional(),
         status: taskStatus.optional(),
+        note: z
+          .string()
+          .optional()
+          .describe(
+            "Short flag/handoff note shown on the task card: why it needs review, what's blocking, or what to pick up later.",
+          ),
         milestoneId: z.string().nullable().optional(),
         parentId: z.string().nullable().optional(),
         dueDate: dateInput.nullable().optional(),

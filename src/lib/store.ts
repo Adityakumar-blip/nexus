@@ -79,6 +79,8 @@ function mapTask(id: string, data: DocumentData): Task {
     order: data.order ?? 0,
     dueDate: nullableTs(data.dueDate),
     assigneeId: data.assigneeId ?? null,
+    note: data.note ?? "",
+    docId: data.docId ?? null,
     ownerId: data.ownerId,
     createdAt: ts(data.createdAt),
     updatedAt: ts(data.updatedAt),
@@ -266,6 +268,7 @@ export async function createTask(
     parentId?: string | null;
     dueDate?: number | null;
     assigneeId?: string | null;
+    note?: string;
     order?: number;
   },
 ): Promise<string> {
@@ -281,6 +284,8 @@ export async function createTask(
     order: input.order ?? Date.now(),
     dueDate: input.dueDate ?? null,
     assigneeId: input.assigneeId ?? null,
+    note: input.note ?? "",
+    docId: null,
     ownerId: uid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -303,6 +308,8 @@ export async function updateTask(
       | "milestoneId"
       | "parentId"
       | "assigneeId"
+      | "note"
+      | "docId"
     >
   >,
 ): Promise<void> {

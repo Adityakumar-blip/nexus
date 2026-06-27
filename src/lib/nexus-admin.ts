@@ -263,6 +263,8 @@ function mapTask(id: string, data: FirebaseFirestore.DocumentData): Task {
     order: data.order ?? 0,
     dueDate: nullableTs(data.dueDate),
     assigneeId: data.assigneeId ?? null,
+    note: data.note ?? "",
+    docId: data.docId ?? null,
     ownerId: data.ownerId,
     createdAt: ts(data.createdAt),
     updatedAt: ts(data.updatedAt),
@@ -298,6 +300,7 @@ export async function createTask(
     milestoneId?: string | null;
     parentId?: string | null;
     dueDate?: number | null;
+    note?: string;
   },
 ): Promise<Task> {
   await getOwned(COL.projects, input.projectId, ownerId);
@@ -315,6 +318,8 @@ export async function createTask(
     order: Date.now(),
     dueDate: input.dueDate ?? null,
     assigneeId: null,
+    note: input.note ?? "",
+    docId: null,
     ownerId,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
@@ -326,7 +331,7 @@ export async function updateTask(
   ownerId: string,
   id: string,
   patch: Partial<
-    Pick<Task, "title" | "description" | "status" | "type" | "priority" | "order" | "dueDate" | "milestoneId" | "parentId">
+    Pick<Task, "title" | "description" | "status" | "type" | "priority" | "order" | "dueDate" | "milestoneId" | "parentId" | "note" | "docId">
   >,
 ): Promise<Task> {
   await getOwned(COL.tasks, id, ownerId);

@@ -121,11 +121,88 @@ export function colorClasses(token: string) {
   return COLOR_CLASSES[token] ?? COLOR_CLASSES.blue;
 }
 
+// Raw hex per project color token — for SVG/inline styles (charts, timeline
+// bars) where a Tailwind class can't be used.
+export const COLOR_HEX: Record<string, string> = {
+  blue: "#3b82f6",
+  violet: "#8b5cf6",
+  emerald: "#10b981",
+  amber: "#f59e0b",
+  rose: "#f43f5e",
+  cyan: "#06b6d4",
+  fuchsia: "#d946ef",
+  lime: "#84cc16",
+};
+
+export function colorHex(token: string) {
+  return COLOR_HEX[token] ?? COLOR_HEX.blue;
+}
+
+// Dot colors per task status — shared by the board, list, filters, and dialog so
+// the five lanes read consistently everywhere.
+export const STATUS_DOT: Record<string, string> = {
+  todo: "bg-muted-foreground",
+  in_progress: "bg-blue-500",
+  review: "bg-amber-500",
+  done: "bg-emerald-500",
+  later: "bg-violet-400",
+};
+
 export const PRIORITY_CLASSES: Record<string, string> = {
   low: "text-muted-foreground",
   medium: "text-amber-600 dark:text-amber-400",
   high: "text-rose-600 dark:text-rose-400",
 };
+
+// Solid pill styling per priority — used on the board cards and the detail
+// panel where a priority reads as a labelled chip rather than a bare icon.
+export const PRIORITY_BADGE: Record<string, { label: string; badge: string }> = {
+  high: {
+    label: "High",
+    badge: "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20",
+  },
+  medium: {
+    label: "Medium",
+    badge:
+      "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
+  },
+  low: {
+    label: "Low",
+    badge: "bg-muted text-muted-foreground border-transparent",
+  },
+};
+
+export function priorityBadge(priority: string) {
+  return PRIORITY_BADGE[priority] ?? PRIORITY_BADGE.medium;
+}
+
+// Pill styling per task status — the labelled counterpart to STATUS_DOT, used
+// in the detail panel and anywhere a status reads as a chip.
+export const STATUS_BADGE: Record<string, string> = {
+  todo: "bg-muted text-muted-foreground border-transparent",
+  in_progress:
+    "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20",
+  review:
+    "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
+  done: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20",
+  later:
+    "bg-violet-500/10 text-violet-700 dark:text-violet-400 border-violet-500/20",
+};
+
+// A short, stable display key for a task (e.g. "NX-7F3C") derived from its id —
+// gives cards a scannable reference like the issue keys in Linear/Jira.
+export function taskKey(id: string): string {
+  return "NX-" + id.replace(/[^a-zA-Z0-9]/g, "").slice(-4).toUpperCase();
+}
+
+// Fraction (0–1) of a task that's complete. Driven by sub-tasks when present,
+// otherwise inferred from status so every card can show honest momentum.
+export function taskProgress(status: string, subDone: number, subTotal: number) {
+  if (subTotal > 0) return subDone / subTotal;
+  if (status === "done") return 1;
+  if (status === "in_progress" || status === "review") return 0.5;
+  return 0;
+}
 
 // Badge styling per task type. Literal class strings so Tailwind keeps them.
 export const TASK_TYPE_META: Record<

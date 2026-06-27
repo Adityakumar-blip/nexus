@@ -2,7 +2,9 @@
 // Firestore stores timestamps as `Timestamp`; we convert to millis (number) on read
 // so the rest of the app deals in plain serializable values.
 
-export type TaskStatus = "todo" | "in_progress" | "done";
+// "review" (agent flags a task for human oversight) and "later" (parked for
+// after current work) give agents a way to set tasks aside without dropping them.
+export type TaskStatus = "todo" | "in_progress" | "review" | "done" | "later";
 export type Priority = "low" | "medium" | "high";
 export type ProjectStatus = "active" | "archived";
 export type TaskType = "feature" | "bug" | "improvement" | "chore";
@@ -79,6 +81,11 @@ export interface Task {
   order: number; // sort order within a status column
   dueDate: number | null;
   assigneeId: string | null; // uid of the project member this task is assigned to
+  // A short message an agent (or person) leaves to flag context: why this task
+  // needs oversight, what's blocking it, or what to pick up when it's revisited.
+  note: string;
+  // Optional link to a feature doc (a Doc in the project's Docs workspace).
+  docId: string | null;
   ownerId: string;
   createdAt: number;
   updatedAt: number;
@@ -132,7 +139,9 @@ export interface Doc {
 export const TASK_STATUSES: { value: TaskStatus; label: string }[] = [
   { value: "todo", label: "To Do" },
   { value: "in_progress", label: "In Progress" },
+  { value: "review", label: "Needs Review" },
   { value: "done", label: "Done" },
+  { value: "later", label: "Later" },
 ];
 
 export const PRIORITIES: { value: Priority; label: string }[] = [

@@ -28,14 +28,19 @@ export function MarkdownView({
             <h3 className="mt-4 mb-2 text-lg font-semibold first:mt-0" {...p} />
           ),
           p: ({ ...p }) => <p className="my-3 leading-relaxed" {...p} />,
-          a: ({ ...p }) => (
-            <a
-              className="text-primary font-medium underline underline-offset-4"
-              target="_blank"
-              rel="noreferrer"
-              {...p}
-            />
-          ),
+          a: ({ href, ...p }) => {
+            // Internal deep-links (e.g. /projects/abc?task=123) stay in-app and
+            // open in the same tab; external links open in a new one.
+            const internal = typeof href === "string" && href.startsWith("/");
+            return (
+              <a
+                href={href}
+                className="text-primary font-medium underline underline-offset-4"
+                {...(internal ? {} : { target: "_blank", rel: "noreferrer" })}
+                {...p}
+              />
+            );
+          },
           ul: ({ ...p }) => (
             <ul className="my-3 list-disc space-y-1 pl-6" {...p} />
           ),

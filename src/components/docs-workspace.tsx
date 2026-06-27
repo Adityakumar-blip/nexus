@@ -35,12 +35,16 @@ const ICONS = ["📄", "📝", "📚", "💡", "🚀", "🐛", "🎯", "🔧", "
 // scopes to a single project (new docs inherit that project).
 export function DocsWorkspace({
   projectId = null,
+  initialDocId = null,
 }: {
   projectId?: string | null;
+  // Doc to select on mount (e.g. opened from a task's "Open doc" link). The
+  // parent remounts via `key` to retarget, so this is read as the initial value.
+  initialDocId?: string | null;
 }) {
   const { user } = useAuth();
   const [docs, setDocs] = useState<Doc[] | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialDocId);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
 

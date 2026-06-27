@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -15,6 +15,13 @@ import {
   Circle,
   LayoutGrid,
   List,
+  SearchX,
+  FileText,
+  AlertCircle,
+  ChevronDown,
+  Check,
+  Layers,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
@@ -41,10 +48,23 @@ import {
   targetLabel,
   taskTypeMeta,
   milestoneStatusMeta,
+  priorityBadge,
+  taskKey,
+  taskProgress,
   PRIORITY_CLASSES,
+  STATUS_DOT,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { TaskDialog } from "@/components/task-dialog";
+import { TaskFilterBar } from "@/components/task-filters";
+import {
+  type TaskFilters as TaskFilterState,
+  type SortKey,
+  EMPTY_FILTERS,
+  hasActiveFilters,
+  taskMatches,
+  sortTasks,
+} from "@/lib/task-filters";
 import { ProjectDialog } from "@/components/project-dialog";
 import { ProjectMembersDialog } from "@/components/project-members-dialog";
 import { MilestoneDialog } from "@/components/milestone-dialog";
@@ -60,13 +80,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-// Inline status dot colors for the list view.
-const STATUS_DOT: Record<TaskStatus, string> = {
-  todo: "bg-muted-foreground",
-  in_progress: "bg-blue-500",
-  done: "bg-emerald-500",
-};
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ProgressBar } from "@/components/dashboard/primitives";
 
 // Filter sentinels alongside real milestone ids.
 const ALL = "all";
@@ -95,10 +114,22 @@ export default function ProjectBoardPage() {
     milestone?: Milestone;
   }>({ open: false });
   const [filter, setFilter] = useState<string>(ALL);
+  const [filters, setFilters] = useState<TaskFilterState>(EMPTY_FILTERS);
+  const [sort, setSort] = useState<SortKey>("manual");
+  // Captured once for relative date filters ("overdue", "due this week"). Stable
+  // across renders so the filter memo stays pure; refreshes on navigation.
+  const [now] = useState(() => Date.now());
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<TaskStatus | null>(null);
   const [view, setView] = useState<"board" | "docs">("board");
   const [layout, setLayout] = useState<"kanban" | "list">("kanban");
+  const [docToOpen, setDocToOpen] = useState<string | null>(null);
+
+  // Jump to a task's linked feature doc: switch to the Docs view and select it.
+  function openDoc(docId: string) {
+    setDocToOpen(docId);
+    setView("docs");
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -117,6 +148,21 @@ export default function ProjectBoardPage() {
     const m = new URLSearchParams(window.location.search).get("m");
     if (m) setFilter(m);
   }, []);
+
+  // Honor a deep link to a single task, e.g. /projects/abc?task=<taskId> — used
+  // by references embedded in Knowledge notes. Runs once tasks have loaded.
+  const taskParamHandled = useRef(false);
+  useEffect(() => {
+    if (taskParamHandled.current || !tasks) return;
+    const tid = new URLSearchParams(window.location.search).get("task");
+    taskParamHandled.current = true;
+    if (!tid) return;
+    const t = tasks.find((x) => x.id === tid);
+    if (t) {
+      setView("board");
+      setTaskDialog({ open: true, task: t, status: t.status });
+    }
+  }, [tasks]);
 
   const project = useMemo(
     () => (projects ?? []).find((p) => p.id === projectId),
@@ -148,21 +194,6 @@ export default function ProjectBoardPage() {
     return all.filter((t) => t.milestoneId === filter);
   }, [tasks, filter]);
 
-  // Top-level cards on the board are tasks without a parent; sub-tasks are
-  // nested inside their parent's card instead of getting their own column slot.
-  const grouped = useMemo(() => {
-    const g: Record<TaskStatus, Task[]> = {
-      todo: [],
-      in_progress: [],
-      done: [],
-    };
-    visibleTasks.forEach((t) => {
-      if (t.parentId) return;
-      g[t.status]?.push(t);
-    });
-    return g;
-  }, [visibleTasks]);
-
   // parentId -> its sub-tasks (drawn from all tasks, not just the filtered set,
   // so a parent's children always travel with it).
   const subtasksByParent = useMemo(() => {
@@ -178,6 +209,32 @@ export default function ProjectBoardPage() {
     }
     return map;
   }, [tasks]);
+
+  // Top-level cards on the board are tasks without a parent. After the milestone
+  // scope (visibleTasks) we apply the Linear-style filters + chosen sort.
+  const topLevel = useMemo(
+    () => visibleTasks.filter((t) => !t.parentId),
+    [visibleTasks],
+  );
+
+  const filteredTopLevel = useMemo(() => {
+    const matched = topLevel.filter((t) =>
+      taskMatches(t, subtasksByParent.get(t.id) ?? [], filters, now),
+    );
+    return sortTasks(matched, sort);
+  }, [topLevel, subtasksByParent, filters, sort, now]);
+
+  const grouped = useMemo(() => {
+    const g = Object.fromEntries(
+      TASK_STATUSES.map((s) => [s.value, [] as Task[]]),
+    ) as Record<TaskStatus, Task[]>;
+    filteredTopLevel.forEach((t) => {
+      (g[t.status] ??= []).push(t);
+    });
+    return g;
+  }, [filteredTopLevel]);
+
+  const filtersActive = hasActiveFilters(filters);
 
   // done/total per milestone for the chips + progress bar
   const progressFor = useMemo(() => {
@@ -332,42 +389,14 @@ export default function ProjectBoardPage() {
 
         {view === "board" && (
           <>
-        {/* Releases / milestones filter bar */}
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <FilterChip
-            active={filter === ALL}
-            onClick={() => setFilter(ALL)}
-            label="All tasks"
-          />
-          {milestones.map((m) => {
-            const p = progressFor.get(m.id);
-            const sm = milestoneStatusMeta(m.status);
-            return (
-              <FilterChip
-                key={m.id}
-                active={filter === m.id}
-                onClick={() => setFilter(m.id)}
-                label={m.name}
-                dot={sm.dot}
-                count={p ? `${p.done}/${p.total}` : undefined}
-              />
-            );
-          })}
-          <FilterChip
-            active={filter === NO_MS}
-            onClick={() => setFilter(NO_MS)}
-            label="No milestone"
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1 text-xs"
-            onClick={() => setMilestoneDialog({ open: true })}
-          >
-            <Rocket className="size-3.5" />
-            New milestone
-          </Button>
-        </div>
+        {/* Releases / milestones filter — Linear-style dropdown */}
+        <MilestoneSelect
+          filter={filter}
+          onFilter={setFilter}
+          milestones={milestones}
+          progressFor={progressFor}
+          onNew={() => setMilestoneDialog({ open: true })}
+        />
 
         {/* Selected milestone detail */}
         {activeMilestone && (
@@ -379,14 +408,35 @@ export default function ProjectBoardPage() {
             }
           />
         )}
+
+        {/* Linear-style filter toolbar */}
+        <div className="mt-4">
+          <TaskFilterBar
+            filters={filters}
+            onChange={setFilters}
+            sort={sort}
+            onSortChange={setSort}
+            memberIds={project?.memberIds ?? []}
+            profiles={profiles}
+            resultCount={filteredTopLevel.length}
+            totalCount={topLevel.length}
+          />
+        </div>
           </>
         )}
       </div>
 
       {view === "docs" ? (
         <div className="h-[calc(100svh-185px)]">
-          <DocsWorkspace projectId={projectId} />
+          {/* Remount when a task targets a new doc so it opens that page. */}
+          <DocsWorkspace
+            key={docToOpen ?? "all"}
+            projectId={projectId}
+            initialDocId={docToOpen}
+          />
         </div>
+      ) : !loading && filtersActive && filteredTopLevel.length === 0 ? (
+        <EmptyFilterState onClear={() => setFilters(EMPTY_FILTERS)} />
       ) : layout === "list" ? (
         <TaskListView
           loading={loading}
@@ -398,10 +448,11 @@ export default function ProjectBoardPage() {
           canEdit={canEdit}
           onOpenTask={openEdit}
           onStatusChange={moveTask}
+          onOpenDoc={openDoc}
           onAddTask={() => openNew("todo")}
         />
       ) : (
-      <div className="grid auto-rows-min gap-4 p-6 md:grid-cols-3">
+      <div className="flex items-start gap-4 overflow-x-auto p-6">
         {TASK_STATUSES.map((col) => {
           const items = grouped[col.value];
           const isOver = dragOver === col.value;
@@ -420,12 +471,18 @@ export default function ProjectBoardPage() {
                 setDragOver(null);
               }}
               className={cn(
-                "bg-muted/40 flex flex-col gap-3 rounded-xl border p-3 transition-colors",
+                "bg-muted/40 flex w-80 shrink-0 flex-col gap-3 rounded-xl border p-3 transition-colors",
                 isOver && "border-primary bg-accent",
               )}
             >
               <div className="flex items-center justify-between px-1">
                 <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "size-2 rounded-full",
+                      STATUS_DOT[col.value],
+                    )}
+                  />
                   <h2 className="text-sm font-semibold">{col.label}</h2>
                   <Badge variant="secondary" className="rounded-full">
                     {loading ? "·" : items.length}
@@ -475,6 +532,7 @@ export default function ProjectBoardPage() {
                       onEditSubtask={openEdit}
                       onToggleSubtask={toggleSubtask}
                       onAddSubtask={() => openNewSubtask(t)}
+                      onOpenDoc={openDoc}
                       assignee={
                         t.assigneeId ? profiles.get(t.assigneeId) : undefined
                       }
@@ -501,6 +559,7 @@ export default function ProjectBoardPage() {
         canEdit={canEdit}
         memberIds={project?.memberIds ?? []}
         profiles={profiles}
+        onOpenDoc={openDoc}
       />
       {project && (
         <ProjectDialog
@@ -592,6 +651,7 @@ function TaskListView({
   canEdit,
   onOpenTask,
   onStatusChange,
+  onOpenDoc,
   onAddTask,
 }: {
   loading: boolean;
@@ -603,15 +663,12 @@ function TaskListView({
   canEdit: boolean;
   onOpenTask: (task: Task) => void;
   onStatusChange: (taskId: string, status: TaskStatus) => void;
+  onOpenDoc: (docId: string) => void;
   onAddTask: () => void;
 }) {
-  // One flat list — not split by status. We keep a stable order (To Do →
-  // In Progress → Done) so rows don't jump around as statuses change.
-  const items = [
-    ...grouped.todo,
-    ...grouped.in_progress,
-    ...grouped.done,
-  ];
+  // One flat list — not split by status. We keep a stable lane order (the
+  // TASK_STATUSES order) so rows don't jump around as statuses change.
+  const items = TASK_STATUSES.flatMap((s) => grouped[s.value] ?? []);
 
   if (loading) {
     return (
@@ -648,6 +705,7 @@ function TaskListView({
               canEdit={canEdit}
               onClick={() => onOpenTask(t)}
               onStatusChange={onStatusChange}
+              onOpenDoc={onOpenDoc}
             />
           ))}
         </div>
@@ -664,6 +722,7 @@ function TaskRow({
   canEdit,
   onClick,
   onStatusChange,
+  onOpenDoc,
 }: {
   task: Task;
   subtasks: Task[];
@@ -672,6 +731,7 @@ function TaskRow({
   canEdit: boolean;
   onClick: () => void;
   onStatusChange: (taskId: string, status: TaskStatus) => void;
+  onOpenDoc: (docId: string) => void;
 }) {
   const overdue = task.status !== "done" && isOverdue(task.dueDate);
   const tm = taskTypeMeta(task.type);
@@ -741,6 +801,29 @@ function TaskRow({
           {doneCount}/{subtasks.length}
         </span>
       )}
+      {task.note && (
+        <span
+          title={task.note}
+          aria-label="Has a review note"
+          className="hidden shrink-0 items-center text-amber-600 sm:inline-flex dark:text-amber-400"
+        >
+          <AlertCircle className="size-3.5" />
+        </span>
+      )}
+      {task.docId && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenDoc(task.docId!);
+          }}
+          title="Open feature doc"
+          aria-label="Open feature doc"
+          className="text-muted-foreground hover:text-foreground hidden shrink-0 sm:inline-flex"
+        >
+          <FileText className="size-3.5" />
+        </button>
+      )}
       {milestoneName && (
         <span className="text-muted-foreground hidden shrink-0 items-center gap-1 text-xs md:inline-flex">
           <Rocket className="size-3" />
@@ -802,41 +885,215 @@ function MemberAvatars({
   );
 }
 
-function FilterChip({
+function EmptyFilterState({ onClear }: { onClear: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+      <div className="bg-muted text-muted-foreground flex size-12 items-center justify-center rounded-full">
+        <SearchX className="size-6" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-medium">No tasks match these filters</p>
+        <p className="text-muted-foreground text-sm">
+          Try removing a filter or broadening your search.
+        </p>
+      </div>
+      <Button variant="outline" size="sm" onClick={onClear}>
+        Clear all filters
+      </Button>
+    </div>
+  );
+}
+
+// Linear-style milestone filter. A single compact trigger opens a searchable
+// popover listing every release with its live progress — so any number of
+// milestones stays tidy instead of wrapping into a tall pile of chips.
+function MilestoneSelect({
+  filter,
+  onFilter,
+  milestones,
+  progressFor,
+  onNew,
+}: {
+  filter: string;
+  onFilter: (v: string) => void;
+  milestones: Milestone[];
+  progressFor: Map<string, { done: number; total: number }>;
+  onNew: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+
+  const active = milestones.find((m) => m.id === filter);
+  const triggerLabel =
+    filter === ALL
+      ? "All tasks"
+      : filter === NO_MS
+        ? "No milestone"
+        : (active?.name ?? "All tasks");
+  const activeProgress = active ? progressFor.get(active.id) : undefined;
+
+  const matches = q.trim()
+    ? milestones.filter((m) =>
+        m.name.toLowerCase().includes(q.trim().toLowerCase()),
+      )
+    : milestones;
+
+  function pick(value: string) {
+    onFilter(value);
+    setOpen(false);
+  }
+
+  return (
+    <div className="mt-4 flex items-center gap-2">
+      <Popover
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) setQ("");
+        }}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="bg-background hover:bg-accent data-[state=open]:bg-accent inline-flex h-8 items-center gap-2 rounded-lg border px-2.5 text-sm font-medium outline-none transition-colors"
+          >
+            {filter === ALL ? (
+              <Layers className="text-muted-foreground size-3.5" />
+            ) : active ? (
+              <span
+                className={cn(
+                  "size-2 rounded-full",
+                  milestoneStatusMeta(active.status).dot,
+                )}
+              />
+            ) : (
+              <span className="border-muted-foreground/50 size-2 rounded-full border" />
+            )}
+            <span className="max-w-[16rem] truncate">{triggerLabel}</span>
+            {activeProgress && (
+              <span className="text-muted-foreground text-xs tabular-nums">
+                {activeProgress.done}/{activeProgress.total}
+              </span>
+            )}
+            <ChevronDown className="text-muted-foreground size-3.5" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-80 p-0">
+          {milestones.length > 6 && (
+            <div className="relative border-b p-1">
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+              <input
+                autoFocus
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search milestones…"
+                className="placeholder:text-muted-foreground h-8 w-full bg-transparent pr-2 pl-7 text-sm outline-none"
+              />
+            </div>
+          )}
+          <div className="max-h-80 overflow-y-auto p-1">
+            <MilestoneOption
+              active={filter === ALL}
+              onClick={() => pick(ALL)}
+              icon={<Layers className="text-muted-foreground size-4" />}
+              label="All tasks"
+            />
+            <MilestoneOption
+              active={filter === NO_MS}
+              onClick={() => pick(NO_MS)}
+              icon={
+                <span className="border-muted-foreground/50 size-2.5 rounded-full border" />
+              }
+              label="No milestone"
+            />
+
+            {matches.length > 0 && <div className="bg-border my-1 h-px" />}
+
+            {matches.map((m) => {
+              const p = progressFor.get(m.id) ?? { done: 0, total: 0 };
+              const sm = milestoneStatusMeta(m.status);
+              const pct =
+                p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
+              const on = filter === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => pick(m.id)}
+                  className={cn(
+                    "hover:bg-accent flex w-full items-start gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors",
+                    on && "bg-accent",
+                  )}
+                >
+                  <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", sm.dot)} />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium">
+                        {m.name}
+                      </span>
+                      <span className="text-muted-foreground ml-auto shrink-0 text-[11px] tabular-nums">
+                        {p.done}/{p.total}
+                      </span>
+                      {on && <Check className="size-3.5 shrink-0" />}
+                    </span>
+                    <ProgressBar value={pct} className="mt-1.5 h-1" />
+                  </span>
+                </button>
+              );
+            })}
+
+            {matches.length === 0 && (
+              <p className="text-muted-foreground px-2 py-6 text-center text-xs">
+                No milestones match “{q}”.
+              </p>
+            )}
+          </div>
+
+          <div className="border-t p-1">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onNew();
+              }}
+              className="hover:bg-accent text-muted-foreground hover:text-foreground flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors"
+            >
+              <Rocket className="size-4" />
+              New milestone
+            </button>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+// A simple (icon + label + check) row used for the non-milestone options.
+function MilestoneOption({
   active,
   onClick,
+  icon,
   label,
-  dot,
-  count,
 }: {
   active: boolean;
   onClick: () => void;
+  icon: React.ReactNode;
   label: string;
-  dot?: string;
-  count?: string;
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-        active
-          ? "border-foreground bg-foreground text-background"
-          : "text-muted-foreground hover:text-foreground hover:border-foreground/30",
+        "hover:bg-accent flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+        active && "bg-accent",
       )}
     >
-      {dot && <span className={cn("size-2 rounded-full", dot)} />}
-      <span className="max-w-[14rem] truncate">{label}</span>
-      {count && (
-        <span
-          className={cn(
-            "tabular-nums",
-            active ? "text-background/70" : "text-muted-foreground/70",
-          )}
-        >
-          {count}
-        </span>
-      )}
+      <span className="flex size-4 shrink-0 items-center justify-center">
+        {icon}
+      </span>
+      <span className="flex-1 font-medium">{label}</span>
+      {active && <Check className="size-3.5 shrink-0" />}
     </button>
   );
 }
@@ -917,6 +1174,7 @@ function TaskCard({
   onEditSubtask,
   onToggleSubtask,
   onAddSubtask,
+  onOpenDoc,
   assignee,
 }: {
   task: Task;
@@ -929,12 +1187,16 @@ function TaskCard({
   onEditSubtask: (task: Task) => void;
   onToggleSubtask: (task: Task) => void;
   onAddSubtask: () => void;
+  onOpenDoc: (docId: string) => void;
   assignee?: UserProfile;
 }) {
   const [expanded, setExpanded] = useState(false);
   const overdue = task.status !== "done" && isOverdue(task.dueDate);
   const tm = taskTypeMeta(task.type);
+  const pr = priorityBadge(task.priority);
   const doneCount = subtasks.filter((s) => s.status === "done").length;
+  const hasSubtasks = subtasks.length > 0;
+  const pct = Math.round(taskProgress(task.status, doneCount, subtasks.length) * 100);
   const stop = (e: React.MouseEvent) => e.stopPropagation();
   return (
     <div
@@ -943,80 +1205,95 @@ function TaskCard({
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={cn(
-        "bg-card group cursor-pointer space-y-2 rounded-lg border p-3 shadow-sm transition-all hover:shadow-md",
-        dragging && "opacity-40",
-        task.status === "done" && "opacity-70",
+        "bg-card group cursor-pointer rounded-xl border p-3.5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-foreground/15 hover:shadow-md active:cursor-grabbing",
+        dragging && "rotate-1 opacity-50 shadow-lg",
+        task.status === "done" && "opacity-75",
       )}
     >
-      <div className="flex items-center gap-2">
+      {/* Header: priority + type chips, with the task key trailing. */}
+      <div className="flex items-center gap-1.5">
         <span
           className={cn(
-            "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+            "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold",
+            pr.badge,
+          )}
+        >
+          {pr.label}
+        </span>
+        <span
+          className={cn(
+            "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
             tm.badge,
           )}
         >
           {tm.label}
         </span>
-        {milestoneName && (
-          <span className="text-muted-foreground inline-flex min-w-0 items-center gap-1 truncate text-[10px]">
-            <Rocket className="size-3 shrink-0" />
-            <span className="truncate">{milestoneName}</span>
-          </span>
-        )}
-        {assignee && (
-          <UserAvatar
-            profile={assignee}
-            className="ml-auto size-5 shrink-0"
-          />
-        )}
+        <span className="text-muted-foreground/70 ml-auto font-mono text-[10px] tracking-tight tabular-nums">
+          {taskKey(task.id)}
+        </span>
       </div>
+
       <p
         className={cn(
-          "text-sm leading-snug font-medium",
+          "mt-2.5 text-sm leading-snug font-semibold",
           task.status === "done" && "text-muted-foreground line-through",
         )}
       >
         {task.title}
       </p>
+
       {task.description && (
-        <p className="text-muted-foreground line-clamp-2 text-xs">
+        <p className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed">
           {task.description}
         </p>
       )}
-      {(task.dueDate != null || task.priority !== "medium") && (
-        <div className="flex items-center gap-3 pt-0.5">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 text-xs capitalize",
-              PRIORITY_CLASSES[task.priority],
-            )}
-          >
-            <Flag className="size-3" />
-            {task.priority}
-          </span>
-          {task.dueDate != null && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 text-xs",
-                overdue ? "text-destructive" : "text-muted-foreground",
-              )}
-            >
-              <Calendar className="size-3" />
-              {formatDate(task.dueDate)}
-            </span>
-          )}
+
+      {task.note && (
+        <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+          <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+          <span className="line-clamp-3 whitespace-pre-wrap">{task.note}</span>
         </div>
       )}
 
-      <div className="border-t pt-2">
-        {subtasks.length > 0 ? (
-          <>
+      {/* Progress — sub-task completion when present, status-inferred otherwise. */}
+      {hasSubtasks && (
+        <div className="mt-3 space-y-1.5">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-muted-foreground font-medium">Progress</span>
+            <span className="text-muted-foreground tabular-nums">{pct}%</span>
+          </div>
+          <div className="bg-muted h-1.5 overflow-hidden rounded-full">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all",
+                pct === 100 ? "bg-emerald-500" : "bg-foreground/80",
+              )}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {milestoneName && (
+        <div className="mt-2.5">
+          <span className="text-muted-foreground bg-muted/60 inline-flex min-w-0 max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px]">
+            <Rocket className="size-3 shrink-0" />
+            <span className="truncate">{milestoneName}</span>
+          </span>
+        </div>
+      )}
+
+      {/* Footer: meta on the left, assignee on the right. */}
+      <div className="mt-3 flex items-center gap-3 border-t pt-2.5">
+        <div className="text-muted-foreground flex items-center gap-3 text-[11px]">
+          {hasSubtasks && (
             <button
               onClick={(e) => {
                 stop(e);
                 setExpanded((v) => !v);
               }}
-              className="text-muted-foreground hover:text-foreground flex w-full items-center gap-1 text-xs"
+              className="hover:text-foreground inline-flex items-center gap-1"
+              aria-label="Toggle sub-tasks"
             >
               <ChevronRight
                 className={cn(
@@ -1024,75 +1301,115 @@ function TaskCard({
                   expanded && "rotate-90",
                 )}
               />
+              <CheckCircle2 className="size-3.5" />
               <span className="tabular-nums">
                 {doneCount}/{subtasks.length}
               </span>
-              <span>sub-tasks</span>
             </button>
-            {expanded && (
-              <div className="mt-2 space-y-1">
-                {subtasks.map((s) => (
-                  <div key={s.id} className="flex items-center gap-2">
-                    <button
-                      onClick={(e) => {
-                        stop(e);
-                        onToggleSubtask(s);
-                      }}
-                      className="text-muted-foreground hover:text-foreground shrink-0"
-                      aria-label={
-                        s.status === "done"
-                          ? "Mark sub-task not done"
-                          : "Mark sub-task done"
-                      }
-                    >
-                      {s.status === "done" ? (
-                        <CheckCircle2 className="size-4 text-emerald-500" />
-                      ) : (
-                        <Circle className="size-4" />
-                      )}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        stop(e);
-                        onEditSubtask(s);
-                      }}
-                      className={cn(
-                        "hover:text-foreground truncate text-left text-xs",
-                        s.status === "done"
-                          ? "text-muted-foreground line-through"
-                          : "text-foreground",
-                      )}
-                    >
-                      {s.title}
-                    </button>
-                  </div>
-                ))}
-                <button
-                  onClick={(e) => {
-                    stop(e);
-                    onAddSubtask();
-                  }}
-                  className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
-                >
-                  <Plus className="size-3" />
-                  Add sub-task
-                </button>
-              </div>
-            )}
-          </>
-        ) : (
+          )}
+          {task.dueDate != null && (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1",
+                overdue ? "text-destructive" : "",
+              )}
+            >
+              <Calendar className="size-3.5" />
+              {formatDate(task.dueDate)}
+            </span>
+          )}
+          {task.docId && (
+            <button
+              type="button"
+              onClick={(e) => {
+                stop(e);
+                onOpenDoc(task.docId!);
+              }}
+              title="Open feature doc"
+              aria-label="Open feature doc"
+              className="hover:text-foreground inline-flex items-center"
+            >
+              <FileText className="size-3.5" />
+            </button>
+          )}
+        </div>
+        <div className="ml-auto flex items-center gap-1.5">
+          {!hasSubtasks && (
+            <button
+              onClick={(e) => {
+                stop(e);
+                onAddSubtask();
+              }}
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5 text-[11px] opacity-0 transition-opacity group-hover:opacity-100"
+            >
+              <Plus className="size-3" />
+              Subtask
+            </button>
+          )}
+          {assignee ? (
+            <UserAvatar
+              profile={assignee}
+              className="ring-background size-6 ring-2"
+            />
+          ) : (
+            <span className="border-muted-foreground/30 text-muted-foreground/50 flex size-6 items-center justify-center rounded-full border border-dashed">
+              <Circle className="size-3" />
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded sub-task list */}
+      {hasSubtasks && expanded && (
+        <div className="mt-2 space-y-1 border-t pt-2">
+          {subtasks.map((s) => (
+            <div key={s.id} className="flex items-center gap-2">
+              <button
+                onClick={(e) => {
+                  stop(e);
+                  onToggleSubtask(s);
+                }}
+                className="text-muted-foreground hover:text-foreground shrink-0"
+                aria-label={
+                  s.status === "done"
+                    ? "Mark sub-task not done"
+                    : "Mark sub-task done"
+                }
+              >
+                {s.status === "done" ? (
+                  <CheckCircle2 className="size-4 text-emerald-500" />
+                ) : (
+                  <Circle className="size-4" />
+                )}
+              </button>
+              <button
+                onClick={(e) => {
+                  stop(e);
+                  onEditSubtask(s);
+                }}
+                className={cn(
+                  "hover:text-foreground truncate text-left text-xs",
+                  s.status === "done"
+                    ? "text-muted-foreground line-through"
+                    : "text-foreground",
+                )}
+              >
+                {s.title}
+              </button>
+            </div>
+          ))}
           <button
             onClick={(e) => {
               stop(e);
               onAddSubtask();
             }}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs opacity-0 transition-opacity group-hover:opacity-100"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
           >
             <Plus className="size-3" />
             Add sub-task
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
