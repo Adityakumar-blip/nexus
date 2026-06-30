@@ -285,6 +285,7 @@ export default function DashboardPage() {
         name: user.displayName ?? "",
         email: user.email ?? "",
         photoURL: user.photoURL ?? null,
+        appearanceTheme: null,
         updatedAt: 0,
       }
     : null;

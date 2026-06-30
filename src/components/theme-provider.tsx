@@ -30,16 +30,6 @@ const ThemeSwitchContext = React.createContext<ThemeSwitchContextValue | null>(
   null,
 );
 
-declare global {
-  interface Document {
-    startViewTransition?: (
-      updateCallback: () => void | Promise<void>,
-    ) => {
-      ready: Promise<void>;
-    };
-  }
-}
-
 function maxRadiusFromPoint(x: number, y: number): number {
   const w = window.innerWidth;
   const h = window.innerHeight;
