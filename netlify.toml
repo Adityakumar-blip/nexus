@@ -1,0 +1,4 @@
+# firebase-admin@14 → jwks-rsa → jose@6 is ESM-only; requiring it needs Node
+# >=22.12 (require(ESM) support). Pin the build AND functions runtime to 22.
+[build.environment]
+  NODE_VERSION = "22"
