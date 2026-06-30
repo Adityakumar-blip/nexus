@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Trash2, Crown, UserPlus } from "lucide-react";
+import { Trash2, Crown, UserPlus, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -9,6 +9,7 @@ import {
   fetchUserProfiles,
   setProjectMember,
   removeProjectMember,
+  updateProject,
 } from "@/lib/store";
 import {
   PROJECT_ROLES,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/types";
 import { UserAvatar, displayName } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -47,6 +49,8 @@ export function ProjectMembersDialog({
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [profiles, setProfiles] = useState<Map<string, UserProfile>>(new Map());
   const [addUid, setAddUid] = useState<string>("");
+  const [linkOrgId, setLinkOrgId] = useState<string>("");
+  const [linking, setLinking] = useState(false);
 
   const isAdmin = project.roles[user?.uid ?? ""] === "admin"
     || project.ownerId === user?.uid;
@@ -105,6 +109,21 @@ export function ProjectMembersDialog({
     }
   }
 
+  async function handleLinkOrganization() {
+    const targetOrgId = linkOrgId || orgs[0]?.id;
+    if (!targetOrgId) return;
+    setLinking(true);
+    try {
+      await updateProject(project.id, { orgId: targetOrgId });
+      toast.success("Organization linked");
+      setLinkOrgId("");
+    } catch {
+      toast.error("Could not link organization");
+    } finally {
+      setLinking(false);
+    }
+  }
+
   const members = useMemo(
     () =>
       [...project.memberIds].sort((a, b) =>
@@ -124,10 +143,56 @@ export function ProjectMembersDialog({
         </DialogHeader>
 
         {!project.orgId ? (
-          <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-center text-sm">
-            This project isn&apos;t linked to an organization yet. Edit the
-            project and pick an organization to start adding members.
-          </p>
+          <div className="space-y-4 rounded-lg border border-dashed p-4">
+            <div className="space-y-1 text-center">
+              <p className="text-sm font-medium">No organization linked</p>
+              <p className="text-muted-foreground text-sm">
+                Link this project to one of your organizations before adding
+                members.
+              </p>
+            </div>
+            {isAdmin ? (
+              orgs.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="project-link-org">Organization</Label>
+                    <Select
+                      value={linkOrgId || orgs[0]?.id || ""}
+                      onValueChange={setLinkOrgId}
+                    >
+                      <SelectTrigger id="project-link-org" className="w-full">
+                        <SelectValue placeholder="Choose an organization" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {orgs.map((org) => (
+                          <SelectItem key={org.id} value={org.id}>
+                            {org.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    onClick={handleLinkOrganization}
+                    disabled={!linkOrgId || linking}
+                    className="w-full"
+                  >
+                    <Link2 className="size-4" />
+                    Link organization
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-center text-sm">
+                  Create or join an organization first, then link this project.
+                </p>
+              )
+            ) : (
+              <p className="text-muted-foreground text-center text-sm">
+                Ask a project admin to link an organization before inviting
+                members.
+              </p>
+            )}
+          </div>
         ) : (
           <div className="space-y-4">
             {/* Add a member from the org pool */}

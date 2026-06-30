@@ -27,6 +27,10 @@ import {
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
+import {
+  type AppColorTheme,
+  normalizeAppColorTheme,
+} from "./appearance";
 import type {
   Project,
   Task,
@@ -628,6 +632,9 @@ function mapProfile(id: string, data: DocumentData): UserProfile {
     name: data.name ?? "",
     email: data.email ?? "",
     photoURL: data.photoURL ?? null,
+    appearanceTheme: data.appearanceTheme
+      ? normalizeAppColorTheme(data.appearanceTheme)
+      : null,
     updatedAt: ts(data.updatedAt),
   };
 }
@@ -642,6 +649,30 @@ export async function upsertUserProfile(user: User): Promise<void> {
       name: user.displayName ?? "",
       email: user.email ?? "",
       photoURL: user.photoURL ?? null,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export function watchUserProfile(
+  uid: string,
+  cb: (profile: UserProfile | null) => void,
+): () => void {
+  return onSnapshot(doc(db, COL.users, uid), (snap) => {
+    cb(snap.exists() ? mapProfile(snap.id, snap.data()) : null);
+  });
+}
+
+export async function updateUserAppearanceTheme(
+  uid: string,
+  appearanceTheme: AppColorTheme,
+): Promise<void> {
+  await setDoc(
+    doc(db, COL.users, uid),
+    {
+      uid,
+      appearanceTheme,
       updatedAt: serverTimestamp(),
     },
     { merge: true },

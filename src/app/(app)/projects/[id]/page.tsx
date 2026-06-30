@@ -290,7 +290,9 @@ export default function ProjectBoardPage() {
   if (projects !== null && !project) {
     return (
       <div className="flex h-svh flex-col items-center justify-center gap-3">
-        <p className="text-muted-foreground">This project doesn&apos;t exist.</p>
+        <p className="text-muted-foreground">
+          This project doesn&apos;t exist.
+        </p>
         <Button variant="outline" onClick={() => router.push("/projects")}>
           <ArrowLeft className="size-4" />
           Back to projects
@@ -301,8 +303,7 @@ export default function ProjectBoardPage() {
 
   const cc = colorClasses(project?.color ?? "blue");
   const loading = tasks === null || projects === null;
-  const defaultMilestoneId =
-    filter === ALL || filter === NO_MS ? null : filter;
+  const defaultMilestoneId = filter === ALL || filter === NO_MS ? null : filter;
 
   return (
     <>
@@ -389,39 +390,39 @@ export default function ProjectBoardPage() {
 
         {view === "board" && (
           <>
-        {/* Releases / milestones filter — Linear-style dropdown */}
-        <MilestoneSelect
-          filter={filter}
-          onFilter={setFilter}
-          milestones={milestones}
-          progressFor={progressFor}
-          onNew={() => setMilestoneDialog({ open: true })}
-        />
+            {/* Releases / milestones filter — Linear-style dropdown */}
+            <MilestoneSelect
+              filter={filter}
+              onFilter={setFilter}
+              milestones={milestones}
+              progressFor={progressFor}
+              onNew={() => setMilestoneDialog({ open: true })}
+            />
 
-        {/* Selected milestone detail */}
-        {activeMilestone && (
-          <MilestoneBanner
-            milestone={activeMilestone}
-            progress={progressFor.get(activeMilestone.id)}
-            onEdit={() =>
-              setMilestoneDialog({ open: true, milestone: activeMilestone })
-            }
-          />
-        )}
+            {/* Selected milestone detail */}
+            {activeMilestone && (
+              <MilestoneBanner
+                milestone={activeMilestone}
+                progress={progressFor.get(activeMilestone.id)}
+                onEdit={() =>
+                  setMilestoneDialog({ open: true, milestone: activeMilestone })
+                }
+              />
+            )}
 
-        {/* Linear-style filter toolbar */}
-        <div className="mt-4">
-          <TaskFilterBar
-            filters={filters}
-            onChange={setFilters}
-            sort={sort}
-            onSortChange={setSort}
-            memberIds={project?.memberIds ?? []}
-            profiles={profiles}
-            resultCount={filteredTopLevel.length}
-            totalCount={topLevel.length}
-          />
-        </div>
+            {/* Linear-style filter toolbar */}
+            <div className="mt-4">
+              <TaskFilterBar
+                filters={filters}
+                onChange={setFilters}
+                sort={sort}
+                onSortChange={setSort}
+                memberIds={project?.memberIds ?? []}
+                profiles={profiles}
+                resultCount={filteredTopLevel.length}
+                totalCount={topLevel.length}
+              />
+            </div>
           </>
         )}
       </div>
@@ -452,98 +453,101 @@ export default function ProjectBoardPage() {
           onAddTask={() => openNew("todo")}
         />
       ) : (
-      <div className="flex items-start gap-4 overflow-x-auto p-6">
-        {TASK_STATUSES.map((col) => {
-          const items = grouped[col.value];
-          const isOver = dragOver === col.value;
-          return (
-            <div
-              key={col.value}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(col.value);
-              }}
-              onDragLeave={() => setDragOver((s) => (s === col.value ? null : s))}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (dragId) moveTask(dragId, col.value);
-                setDragId(null);
-                setDragOver(null);
-              }}
-              className={cn(
-                "bg-muted/40 flex w-80 shrink-0 flex-col gap-3 rounded-xl border p-3 transition-colors",
-                isOver && "border-primary bg-accent",
-              )}
-            >
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      "size-2 rounded-full",
-                      STATUS_DOT[col.value],
-                    )}
-                  />
-                  <h2 className="text-sm font-semibold">{col.label}</h2>
-                  <Badge variant="secondary" className="rounded-full">
-                    {loading ? "·" : items.length}
-                  </Badge>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7"
-                  onClick={() => openNew(col.value)}
-                >
-                  <Plus className="size-4" />
-                </Button>
-              </div>
-
-              <div className="flex min-h-12 flex-col gap-2">
-                {loading ? (
-                  <>
-                    <Skeleton className="h-20 w-full rounded-lg" />
-                    <Skeleton className="h-20 w-full rounded-lg" />
-                  </>
-                ) : items.length === 0 ? (
-                  <button
-                    onClick={() => openNew(col.value)}
-                    className="text-muted-foreground hover:border-foreground/30 hover:text-foreground rounded-lg border border-dashed py-6 text-center text-xs transition-colors"
-                  >
-                    Add a task
-                  </button>
-                ) : (
-                  items.map((t) => (
-                    <TaskCard
-                      key={t.id}
-                      task={t}
-                      subtasks={subtasksByParent.get(t.id) ?? []}
-                      milestoneName={
-                        filter === ALL && t.milestoneId
-                          ? milestones.find((m) => m.id === t.milestoneId)?.name
-                          : undefined
-                      }
-                      dragging={dragId === t.id}
-                      onDragStart={() => setDragId(t.id)}
-                      onDragEnd={() => {
-                        setDragId(null);
-                        setDragOver(null);
-                      }}
-                      onClick={() => openEdit(t)}
-                      onEditSubtask={openEdit}
-                      onToggleSubtask={toggleSubtask}
-                      onAddSubtask={() => openNewSubtask(t)}
-                      onOpenDoc={openDoc}
-                      assignee={
-                        t.assigneeId ? profiles.get(t.assigneeId) : undefined
-                      }
-                    />
-                  ))
+        <div className="flex items-start gap-4 overflow-x-auto p-6">
+          {TASK_STATUSES.map((col) => {
+            const items = grouped[col.value];
+            const isOver = dragOver === col.value;
+            return (
+              <div
+                key={col.value}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(col.value);
+                }}
+                onDragLeave={() =>
+                  setDragOver((s) => (s === col.value ? null : s))
+                }
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragId) moveTask(dragId, col.value);
+                  setDragId(null);
+                  setDragOver(null);
+                }}
+                className={cn(
+                  "bg-muted/40 flex w-80 shrink-0 flex-col gap-3 rounded-xl border p-3 transition-colors",
+                  isOver && "border-primary bg-accent",
                 )}
+              >
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "size-2 rounded-full",
+                        STATUS_DOT[col.value],
+                      )}
+                    />
+                    <h2 className="text-sm font-semibold">{col.label}</h2>
+                    <Badge variant="secondary" className="rounded-full">
+                      {loading ? "·" : items.length}
+                    </Badge>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    onClick={() => openNew(col.value)}
+                  >
+                    <Plus className="size-4" />
+                  </Button>
+                </div>
+
+                <div className="flex min-h-12 flex-col gap-2">
+                  {loading ? (
+                    <>
+                      <Skeleton className="h-20 w-full rounded-lg" />
+                      <Skeleton className="h-20 w-full rounded-lg" />
+                    </>
+                  ) : items.length === 0 ? (
+                    <button
+                      onClick={() => openNew(col.value)}
+                      className="text-muted-foreground hover:border-foreground/30 hover:text-foreground rounded-lg border border-dashed py-6 text-center text-xs transition-colors"
+                    >
+                      Add a task
+                    </button>
+                  ) : (
+                    items.map((t) => (
+                      <TaskCard
+                        key={t.id}
+                        task={t}
+                        subtasks={subtasksByParent.get(t.id) ?? []}
+                        milestoneName={
+                          filter === ALL && t.milestoneId
+                            ? milestones.find((m) => m.id === t.milestoneId)
+                                ?.name
+                            : undefined
+                        }
+                        dragging={dragId === t.id}
+                        onDragStart={() => setDragId(t.id)}
+                        onDragEnd={() => {
+                          setDragId(null);
+                          setDragOver(null);
+                        }}
+                        onClick={() => openEdit(t)}
+                        onEditSubtask={openEdit}
+                        onToggleSubtask={toggleSubtask}
+                        onAddSubtask={() => openNewSubtask(t)}
+                        onOpenDoc={openDoc}
+                        assignee={
+                          t.assigneeId ? profiles.get(t.assigneeId) : undefined
+                        }
+                      />
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
       )}
 
       <TaskDialog
@@ -577,9 +581,7 @@ export default function ProjectBoardPage() {
       )}
       <MilestoneDialog
         open={milestoneDialog.open}
-        onOpenChange={(open) =>
-          setMilestoneDialog((s) => ({ ...s, open }))
-        }
+        onOpenChange={(open) => setMilestoneDialog((s) => ({ ...s, open }))}
         projectId={projectId}
         milestone={milestoneDialog.milestone}
       />
@@ -756,12 +758,12 @@ function TaskRow({
             className="h-7 w-[8.5rem] gap-1.5 border-transparent bg-transparent text-xs shadow-none hover:bg-transparent disabled:opacity-100"
           >
             <span className="flex items-center gap-1.5">
-              <span
+              {/* <span
                 className={cn(
                   "size-2 rounded-full",
                   STATUS_DOT[task.status],
                 )}
-              />
+              /> */}
               <SelectValue />
             </span>
           </SelectTrigger>
@@ -1025,7 +1027,12 @@ function MilestoneSelect({
                     on && "bg-accent",
                   )}
                 >
-                  <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", sm.dot)} />
+                  <span
+                    className={cn(
+                      "mt-1.5 size-2 shrink-0 rounded-full",
+                      sm.dot,
+                    )}
+                  />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium">
@@ -1108,9 +1115,10 @@ function MilestoneBanner({
   onEdit: () => void;
 }) {
   const sm = milestoneStatusMeta(milestone.status);
-  const pct = progress && progress.total > 0
-    ? Math.round((progress.done / progress.total) * 100)
-    : 0;
+  const pct =
+    progress && progress.total > 0
+      ? Math.round((progress.done / progress.total) * 100)
+      : 0;
   const overdue =
     milestone.status !== "shipped" && isOverdue(milestone.targetDate);
   return (
@@ -1118,7 +1126,12 @@ function MilestoneBanner({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium", sm.badge)}>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
+                sm.badge,
+              )}
+            >
               <span className={cn("size-1.5 rounded-full", sm.dot)} />
               {sm.label}
             </span>
@@ -1196,7 +1209,9 @@ function TaskCard({
   const pr = priorityBadge(task.priority);
   const doneCount = subtasks.filter((s) => s.status === "done").length;
   const hasSubtasks = subtasks.length > 0;
-  const pct = Math.round(taskProgress(task.status, doneCount, subtasks.length) * 100);
+  const pct = Math.round(
+    taskProgress(task.status, doneCount, subtasks.length) * 100,
+  );
   const stop = (e: React.MouseEvent) => e.stopPropagation();
   return (
     <div

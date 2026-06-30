@@ -1,6 +1,7 @@
 // Core domain model for Nexus (projects + knowledge).
 // Firestore stores timestamps as `Timestamp`; we convert to millis (number) on read
 // so the rest of the app deals in plain serializable values.
+import type { AppColorTheme } from "./appearance";
 
 // "review" (agent flags a task for human oversight) and "later" (parked for
 // after current work) give agents a way to set tasks aside without dropping them.
@@ -24,6 +25,7 @@ export interface UserProfile {
   name: string;
   email: string;
   photoURL: string | null;
+  appearanceTheme: AppColorTheme | null;
   updatedAt: number;
 }
 

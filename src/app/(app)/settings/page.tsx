@@ -9,10 +9,13 @@ import {
   Copy,
   Check,
   Terminal,
+  SwatchBook,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
+import { APP_COLOR_THEMES } from "@/lib/appearance";
 import { relativeTime } from "@/lib/format";
+import { useThemeSwitch } from "@/components/theme-provider";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
@@ -46,6 +49,7 @@ interface ApiKey {
 
 export default function SettingsPage() {
   const { user } = useAuth();
+  const { colorTheme, setColorTheme } = useThemeSwitch();
   const [keys, setKeys] = useState<ApiKey[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -146,6 +150,74 @@ export default function SettingsPage() {
       />
 
       <div className="mx-auto max-w-3xl space-y-6 p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <SwatchBook className="size-4" />
+              Appearance
+            </CardTitle>
+            <CardDescription>
+              Pick a product palette for your workspace. This preference is saved
+              to your account and reused on your next visit.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {APP_COLOR_THEMES.map((theme) => {
+                const active = colorTheme === theme.value;
+                return (
+                  <button
+                    key={theme.value}
+                    type="button"
+                    onClick={() => setColorTheme(theme.value)}
+                    className={`group rounded-2xl border p-4 text-left transition-all ${
+                      active
+                        ? "border-primary bg-accent/60 shadow-sm"
+                        : "hover:border-primary/35 hover:bg-accent/30"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold">{theme.label}</span>
+                          {active && (
+                            <Badge variant="secondary" className="rounded-full">
+                              Active
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-muted-foreground mt-1 text-sm">
+                          {theme.description}
+                        </p>
+                      </div>
+                      <div className="flex -space-x-2">
+                        {theme.swatches.map((swatch) => (
+                          <span
+                            key={swatch}
+                            className="ring-background size-7 rounded-full ring-2"
+                            style={{ backgroundColor: swatch }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-4 flex items-center gap-2">
+                      <span className="bg-primary text-primary-foreground inline-flex rounded-md px-2 py-1 text-xs font-medium">
+                        Primary
+                      </span>
+                      <span className="bg-card text-card-foreground inline-flex rounded-md border px-2 py-1 text-xs font-medium">
+                        Card
+                      </span>
+                      <span className="bg-muted text-muted-foreground inline-flex rounded-md px-2 py-1 text-xs font-medium">
+                        Muted
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <div className="flex items-start justify-between gap-4">

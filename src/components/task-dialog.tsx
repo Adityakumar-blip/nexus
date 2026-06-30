@@ -55,12 +55,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -129,9 +124,7 @@ export function TaskDialog({
 
   // Only top-level tasks can be parents (we keep the hierarchy one level deep),
   // and a task can't be its own parent.
-  const eligibleParents = tasks.filter(
-    (t) => !t.parentId && t.id !== task?.id,
-  );
+  const eligibleParents = tasks.filter((t) => !t.parentId && t.id !== task?.id);
   // A task that already has sub-tasks can't itself become a sub-task.
   const hasChildren = task ? tasks.some((t) => t.parentId === task.id) : false;
   const canPickParent = !hasChildren && eligibleParents.length > 0;
@@ -320,9 +313,9 @@ export function TaskDialog({
             >
               <SelectTrigger size="sm" className={PROP_TRIGGER}>
                 <span className="flex items-center gap-2">
-                  <span
+                  {/* <span
                     className={cn("size-2 rounded-full", STATUS_DOT[status])}
-                  />
+                  /> */}
                   <SelectValue />
                 </span>
               </SelectTrigger>
@@ -331,7 +324,10 @@ export function TaskDialog({
                   <SelectItem key={s.value} value={s.value}>
                     <span className="flex items-center gap-2">
                       <span
-                        className={cn("size-2 rounded-full", STATUS_DOT[s.value])}
+                        className={cn(
+                          "size-2 rounded-full",
+                          STATUS_DOT[s.value],
+                        )}
                       />
                       {s.label}
                     </span>
@@ -480,8 +476,8 @@ export function TaskDialog({
             rows={2}
           />
           <p className="text-muted-foreground text-xs">
-            Shown on the card — pair it with “Needs Review” or “Later” so nothing
-            slips through.
+            Shown on the card — pair it with “Needs Review” or “Later” so
+            nothing slips through.
           </p>
         </div>
       </fieldset>

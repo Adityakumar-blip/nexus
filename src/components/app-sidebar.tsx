@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -25,6 +24,7 @@ import { watchProjects } from "@/lib/store";
 import type { Project } from "@/lib/types";
 import { colorClasses } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useThemeSwitch } from "@/components/theme-provider";
 import { SectionLabel } from "@/components/dashboard/primitives";
 import { UserMenu } from "@/components/user-menu";
 
@@ -38,7 +38,7 @@ interface NavLink {
 export function AppSidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
-  const { resolvedTheme, setTheme } = useTheme();
+  const { isDark, toggleTheme } = useThemeSwitch();
   const [projects, setProjects] = useState<Project[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [q, setQ] = useState("");
@@ -51,12 +51,12 @@ export function AppSidebar() {
   const main: NavLink[] = useMemo(
     () => [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-      {
-        href: "/projects",
-        label: "Projects",
-        icon: FolderKanban,
-        count: projects.length || undefined,
-      },
+      // {
+      //   href: "/projects",
+      //   label: "Projects",
+      //   icon: FolderKanban,
+      //   count: projects.length || undefined,
+      // },
       { href: "/roadmap", label: "Roadmap", icon: Map },
       { href: "/organizations", label: "Clients", icon: Users },
     ],
@@ -79,7 +79,6 @@ export function AppSidebar() {
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/");
-  const isDark = resolvedTheme === "dark";
 
   return (
     <aside
@@ -95,7 +94,7 @@ export function AppSidebar() {
         </div>
         {!collapsed && (
           <span className="flex-1 text-lg font-semibold tracking-tight">
-            Nexus
+            Paper
           </span>
         )}
         <button
@@ -180,7 +179,9 @@ export function AppSidebar() {
                         : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
                     )}
                   >
-                    <span className={cn("size-2 shrink-0 rounded-full", cc.dot)} />
+                    <span
+                      className={cn("size-2 shrink-0 rounded-full", cc.dot)}
+                    />
                     <span className="truncate">{p.name}</span>
                   </Link>
                 );
@@ -195,7 +196,12 @@ export function AppSidebar() {
         {!collapsed && <SectionLabel className="px-3">System</SectionLabel>}
         <button
           type="button"
-          onClick={() => setTheme(isDark ? "light" : "dark")}
+          onClick={(e) =>
+            toggleTheme({
+              x: e.clientX,
+              y: e.clientY,
+            })
+          }
           className={cn(
             "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
             collapsed && "justify-center",
