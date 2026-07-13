@@ -55,11 +55,25 @@ async function requireUid(req: NextRequest): Promise<string | NextResponse> {
   }
 }
 
+// Surface Firestore/Admin errors as JSON instead of an opaque generic 500,
+// mirroring /api/orgs — otherwise a failing data op is undiagnosable in prod.
+function fail(e: unknown): NextResponse {
+  console.error("[api/keys] handler failed:", e);
+  return NextResponse.json(
+    { error: e instanceof Error ? e.message : "Request failed" },
+    { status: 500 },
+  );
+}
+
 export async function GET(req: NextRequest) {
   const uid = await requireUid(req);
   if (typeof uid !== "string") return uid;
-  const keys = await listApiKeys(uid);
-  return NextResponse.json({ keys });
+  try {
+    const keys = await listApiKeys(uid);
+    return NextResponse.json({ keys });
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -67,9 +81,13 @@ export async function POST(req: NextRequest) {
   if (typeof uid !== "string") return uid;
   const body = await req.json().catch(() => ({}));
   const label = typeof body.label === "string" ? body.label : "";
-  const { token, meta } = await createApiKey(uid, label);
-  // `token` is returned exactly once — the client must show/copy it now.
-  return NextResponse.json({ token, key: meta }, { status: 201 });
+  try {
+    const { token, meta } = await createApiKey(uid, label);
+    // `token` is returned exactly once — the client must show/copy it now.
+    return NextResponse.json({ token, key: meta }, { status: 201 });
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 export async function DELETE(req: NextRequest) {
@@ -79,7 +97,11 @@ export async function DELETE(req: NextRequest) {
   if (!id) {
     return NextResponse.json({ error: "Missing key id" }, { status: 400 });
   }
-  const ok = await revokeApiKey(uid, id);
-  if (!ok) return NextResponse.json({ error: "Key not found" }, { status: 404 });
-  return NextResponse.json({ revoked: id });
+  try {
+    const ok = await revokeApiKey(uid, id);
+    if (!ok) return NextResponse.json({ error: "Key not found" }, { status: 404 });
+    return NextResponse.json({ revoked: id });
+  } catch (e) {
+    return fail(e);
+  }
 }
